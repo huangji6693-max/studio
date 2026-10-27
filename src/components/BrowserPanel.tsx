@@ -13,6 +13,72 @@ export const BrowserPanel: React.FC<BrowserPanelProps> = ({ currentNetwork, acti
   const [url, setUrl] = useState<string>('http://localhost:3000');
   const [iframeUrl, setIframeUrl] = useState<string>('http://localhost:3000');
   const [key, setKey] = useState<number>(0);
+  const [syncConfirmation, setSyncConfirmation] = useState<{
+    publicKey: string;
+    status: 'synced' | 'acknowledged';
+    updatedAt: string;
+  } | null>(null);
+  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+
+  const postAccountChangeToIframe = React.useCallback((publicKey: string, accountName?: string) => {
+    const payload = {
+      type: 'SOROCREW_ACCOUNT_CHANGED' as const,
+      publicKey,
+      accountName,
+      timestamp: Date.now(),
+    };
+    try {
+      iframeRef.current?.contentWindow?.postMessage(payload, '*');
+    } catch {
+      // Cross-origin postMessage is safe, guard in case frame is detaching
+    }
+    setSyncConfirmation({
+      publicKey,
+      status: 'synced',
+      updatedAt: new Date().toLocaleTimeString(),
+    });
+  }, []);
+
+  React.useEffect(() => {
+    postAccountChangeToIframe(activeAccount.publicKey, activeAccount.name);
+  }, [activeAccount.publicKey, activeAccount.name, postAccountChangeToIframe]);
+
+  React.useEffect(() => {
+    const handleCustomSwitch = (event: Event) => {
+      const customEvt = event as CustomEvent<{ publicKey?: string; accountName?: string }>;
+      if (customEvt.detail?.publicKey) {
+        postAccountChangeToIframe(customEvt.detail.publicKey, customEvt.detail.accountName);
+      }
+    };
+
+    const handleFrameMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+
+      if (data.type === 'SOROCREW_ACCOUNT_CHANGED_ACK' && typeof data.publicKey === 'string') {
+        setSyncConfirmation({
+          publicKey: data.publicKey,
+          status: 'acknowledged',
+          updatedAt: new Date().toLocaleTimeString(),
+        });
+      } else if (data.type === 'SOROCREW_ACCOUNT_CHANGED' && typeof data.publicKey === 'string') {
+        setSyncConfirmation({
+          publicKey: data.publicKey,
+          status: 'synced',
+          updatedAt: new Date().toLocaleTimeString(),
+        });
+      } else if (data.type === 'SOROCREW_GET_ACTIVE_ACCOUNT') {
+        postAccountChangeToIframe(activeAccount.publicKey, activeAccount.name);
+      }
+    };
+
+    window.addEventListener('sorocrew:account-switch', handleCustomSwitch);
+    window.addEventListener('message', handleFrameMessage);
+    return () => {
+      window.removeEventListener('sorocrew:account-switch', handleCustomSwitch);
+      window.removeEventListener('message', handleFrameMessage);
+    };
+  }, [activeAccount.publicKey, activeAccount.name, postAccountChangeToIframe]);
 
   React.useEffect(() => {
     if (initialUrl) {
@@ -94,21 +160,37 @@ export const BrowserPanel: React.FC<BrowserPanelProps> = ({ currentNetwork, acti
       </div>
 
       {/* Active Context Banner */}
-      <div className="bg-blue-50 border-b-2 border-black px-3 py-1.5 flex items-center justify-between text-xs font-mono font-bold">
+      <div className="bg-blue-50 border-b-2 border-black px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono font-bold">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-black animate-ping"></span>
           <span>Target Network: <strong className="uppercase text-blue-700">{currentNetwork.name}</strong></span>
         </div>
-        <div className="text-slate-600 hidden md:block">
-          Active Signer: <span className="font-extrabold text-black">{activeAccount.name} ({activeAccount.publicKey.slice(0, 8)}...)</span>
+        <div className="flex items-center gap-2 text-slate-600">
+          <span className="hidden md:inline">
+            Active Signer: <span className="font-extrabold text-black">{activeAccount.name} ({activeAccount.publicKey.slice(0, 8)}...)</span>
+          </span>
+          {syncConfirmation && (
+            <span
+              data-testid="account-sync-badge"
+              className="inline-flex items-center gap-1 bg-emerald-200 text-black border border-black rounded px-1.5 py-0.5 text-[10px] font-black"
+              title={`Dispatched SOROCREW_ACCOUNT_CHANGED (${syncConfirmation.publicKey}) at ${syncConfirmation.updatedAt}`}
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-800" />
+              <span>
+                {syncConfirmation.status === 'acknowledged' ? 'Frame ACK' : 'Frame Synced'}: {syncConfirmation.publicKey.slice(0, 6)}...
+              </span>
+            </span>
+          )}
         </div>
       </div>
 
       {/* Main dApp Window / Iframe Viewer */}
       <div className="flex-1 bg-slate-50 relative overflow-hidden">
         <iframe
+          ref={iframeRef}
           key={key}
           src={iframeUrl}
+          onLoad={() => postAccountChangeToIframe(activeAccount.publicKey, activeAccount.name)}
           title="Soroban dApp Runner Frame"
           className="w-full h-full border-none"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"

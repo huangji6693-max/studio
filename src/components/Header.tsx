@@ -27,6 +27,31 @@ export const Header: React.FC<HeaderProps> = ({
   const [funding, setFunding] = useState(false);
   const [fundingNotice, setFundingNotice] = useState<string | null>(null);
 
+  const dispatchAccountSwitchToFrames = (acc: AccountInfo) => {
+    const payload = {
+      type: 'SOROCREW_ACCOUNT_CHANGED' as const,
+      publicKey: acc.publicKey,
+      accountName: acc.name,
+      timestamp: Date.now(),
+    };
+
+    window.dispatchEvent(new CustomEvent('sorocrew:account-switch', { detail: payload }));
+
+    const frames = document.querySelectorAll<HTMLIFrameElement>('iframe');
+    frames.forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage(payload, '*');
+      } catch {
+        // Ignore cross-origin frame access errors if any
+      }
+    });
+  };
+
+  const handleAccountSelect = (acc: AccountInfo) => {
+    onSelectAccount(acc);
+    dispatchAccountSwitchToFrames(acc);
+  };
+
   const handleFund = async () => {
     setFunding(true);
     setFundingNotice(null);
@@ -86,9 +111,10 @@ export const Header: React.FC<HeaderProps> = ({
             <Key className="w-4 h-4 text-blue-600" />
             <select
               value={activeAccount.publicKey}
+              aria-label="Select active Stellar account"
               onChange={(e) => {
                 const acc = accounts.find((a) => a.publicKey === e.target.value);
-                if (acc) onSelectAccount(acc);
+                if (acc) handleAccountSelect(acc);
               }}
               className="bg-transparent text-xs font-mono font-extrabold text-black focus:outline-none cursor-pointer max-w-[130px] sm:max-w-[180px] truncate"
             >
