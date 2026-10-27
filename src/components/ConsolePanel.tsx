@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkConfig, HorizonLedger, SorobanEvent, DecodedXDR, ProviderLog } from '../types';
 import { fetchLatestLedgers, decodeXDRString, fetchLiveSorobanEvents, simulateSorobanContract } from '../services/stellar';
-import { Layers, Activity, FileCode, Play, Terminal, RefreshCw, Copy, Check, Search, ArrowRight } from 'lucide-react';
+import { Layers, Activity, FileCode, Play, Terminal, RefreshCw, Copy, Check, Search, ArrowRight, Download } from 'lucide-react';
 
 interface ConsolePanelProps {
   currentNetwork: NetworkConfig;
@@ -33,8 +33,9 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
   const [invoking, setInvoking] = useState<boolean>(false);
   const [lastSimulationXdr, setLastSimulationXdr] = useState<string | null>(null);
 
-  // Copied feedback
+  // Copied & Exported feedback
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [exportedXdr, setExportedXdr] = useState<boolean>(false);
 
   const loadLedgers = async () => {
     setLoadingLedgers(true);
@@ -113,6 +114,44 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleExportDecodedXdr = (decoded: DecodedXDR) => {
+    let parsedPayload: unknown = decoded.json;
+    try {
+      parsedPayload = JSON.parse(decoded.raw);
+    } catch {
+      parsedPayload = decoded.json ?? decoded.raw;
+    }
+
+    const formattedJson = JSON.stringify(
+      {
+        type: decoded.type,
+        network: currentNetwork.name,
+        exportedAt: new Date().toISOString(),
+        decoded: parsedPayload,
+      },
+      null,
+      2
+    );
+
+    const normalizedType = decoded.type === 'Soroban ScVal'
+      ? 'ScVal'
+      : decoded.type.replace(/\s+/g, '-');
+    const fileName = `${normalizedType}-decoded.json`;
+
+    const blob = new Blob([formattedJson], { type: 'application/json;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
+
+    setExportedXdr(true);
+    setTimeout(() => setExportedXdr(false), 2000);
   };
 
   return (
@@ -297,12 +336,32 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
               <div className="neo-box p-3 bg-white border-black">
                 <div className="flex items-center justify-between font-mono font-bold text-xs text-blue-600 mb-2">
                   <span>Type: {xdrResult.type}</span>
-                  <button
-                    onClick={() => copyToClipboard(xdrResult.raw, 'xdr')}
-                    className="p-1 hover:bg-slate-100 rounded border border-black"
-                  >
-                    {copiedId === 'xdr' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+                  <div className="flex items-center gap-1.5 relative">
+                    <button
+                      onClick={() => copyToClipboard(xdrResult.raw, 'xdr')}
+                      title={copiedId === 'xdr' ? 'Copied to clipboard!' : 'Copy decoded XDR'}
+                      className="p-1 hover:bg-slate-100 rounded border border-black text-black flex items-center gap-1"
+                    >
+                      {copiedId === 'xdr' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => handleExportDecodedXdr(xdrResult)}
+                      title={exportedXdr ? 'Downloaded .json file!' : 'Download decoded XDR as .json file'}
+                      className="px-2 py-1 bg-yellow-300 hover:bg-yellow-400 text-black font-extrabold rounded border border-black shadow-[1px_1px_0px_0px_#000] flex items-center gap-1 transition-colors"
+                    >
+                      {exportedXdr ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Downloaded!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export JSON</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <pre className="bg-slate-900 text-emerald-400 p-3 rounded border-2 border-black overflow-x-auto text-[11px] font-mono leading-relaxed">
                   {xdrResult.raw}
