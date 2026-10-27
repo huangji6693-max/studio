@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkConfig, HorizonLedger, SorobanEvent, DecodedXDR, ProviderLog } from '../types';
 import { fetchLatestLedgers, decodeXDRString, fetchLiveSorobanEvents, simulateSorobanContract } from '../services/stellar';
+import { ResourceFootprint } from './ResourceFootprint';
 import { Layers, Activity, FileCode, Play, Terminal, RefreshCw, Copy, Check, Search, ArrowRight } from 'lucide-react';
 
 interface ConsolePanelProps {
@@ -32,6 +33,11 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
   const [contractResult, setContractResult] = useState<string | null>(null);
   const [invoking, setInvoking] = useState<boolean>(false);
   const [lastSimulationXdr, setLastSimulationXdr] = useState<string | null>(null);
+  const [simulationCost, setSimulationCost] = useState<{
+    cpuInsns: number | string;
+    memBytes: number | string;
+    minResourceFee?: string;
+  } | null>(null);
 
   // Copied feedback
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -75,6 +81,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
     setInvoking(true);
     setContractResult(null);
     setLastSimulationXdr(null);
+    setSimulationCost(null);
 
     let parsedArgs: any[] = [];
     try {
@@ -92,6 +99,13 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
 
     setInvoking(false);
     setContractResult(JSON.stringify(sim.data, null, 2));
+    if (sim.data?.cost) {
+      setSimulationCost({
+        cpuInsns: sim.data.cost.cpuInsns ?? 0,
+        memBytes: sim.data.cost.memBytes ?? 0,
+        minResourceFee: sim.data.minResourceFee,
+      });
+    }
     if (sim.rawXdr) {
       setLastSimulationXdr(sim.rawXdr);
     }
@@ -358,6 +372,14 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ currentNetwork, prov
                 </button>
               </div>
             </div>
+
+            {simulationCost && (
+              <ResourceFootprint
+                cpuInsns={simulationCost.cpuInsns}
+                memBytes={simulationCost.memBytes}
+                minResourceFee={simulationCost.minResourceFee}
+              />
+            )}
 
             {contractResult && (
               <div className="neo-box p-3 bg-white border-black space-y-2">
